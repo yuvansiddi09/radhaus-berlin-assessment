@@ -14,6 +14,7 @@ export async function GET() {
 
   const db = createClient()
 
+  // null = no branch filter (administration sees both branches).
   let filialeId: number | null = null
   if (rolle === 'werkstatt') {
     const mitarbeiter = await db.first<{ filiale_id: number | null }>(
@@ -26,6 +27,9 @@ export async function GET() {
     }
   }
 
+  // The branch filter is a bound parameter rather than a conditionally
+  // concatenated clause, so no part of this statement is ever built by
+  // string interpolation.
   const termine = await db.query(
     `select t.id, t.datum, t.beschreibung, t.status, t.kunde_id,
             f.name as filiale, k.name as kunde, k.email as kunde_email
@@ -33,9 +37,9 @@ export async function GET() {
        join filialen f on f.id = t.filiale_id
        join kunden   k on k.id = t.kunde_id
       where t.status <> 'geloescht'
-        ${filialeId ? 'and t.filiale_id = ?' : ''}
+        and (? is null or t.filiale_id = ?)
       order by t.datum desc`,
-    filialeId ? [filialeId] : []
+    [filialeId, filialeId]
   )
 
   return Response.json({ termine })

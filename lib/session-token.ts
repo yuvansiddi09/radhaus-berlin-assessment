@@ -13,6 +13,9 @@ function sign(payload: string): string {
   return createHmac('sha256', SESSION_SECRET).update(payload).digest('base64url')
 }
 
+// Roles are short identifiers ('kunde', 'werkstatt', 'verwaltung') and must
+// not contain the '.' separator. If one ever did, the token would simply
+// fail to verify and the caller would be treated as anonymous - fail-closed.
 export function createSessionToken({ kundeId, rolle }: SessionPayload): string {
   const payload = `${kundeId}.${rolle}`
   return `${payload}.${sign(payload)}`

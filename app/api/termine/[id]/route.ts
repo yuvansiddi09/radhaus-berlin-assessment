@@ -6,63 +6,73 @@ import { getSession } from '@/lib/session'
 
 const ERLAUBTE_STATUS = ['offen', 'angenommen', 'in Arbeit', 'fertig']
 
-async function terminFuerRolleLaden(db: ReturnType<typeof createClient>, id: number) {
-  return db.first<{ id: number; filiale_id: number }>(
-    'select id, filiale_id from termine where id = ?',
-    [id]
-  )
-}
+type Db = ReturnType<typeof createClient>
+type Termin = { id: number; filiale_id: number }
+type Zugriff = { ok: true; termin: Termin } | { ok: false; antwort: Response }
 
-async function darfBearbeiten(rolle: string, kundeId: number | null, filialeId: number) {
-  if (rolle === 'verwaltung') return true
-  if (rolle !== 'werkstatt' || !kundeId) return false
-  const db = createClient()
-  const mitarbeiter = await db.first<{ filiale_id: number | null }>(
-    'select filiale_id from kunden where id = ?',
-    [kundeId]
-  )
-  return mitarbeiter?.filiale_id === filialeId
+const keinZugriff = () => Response.json({ fehler: 'Kein Zugriff' }, { status: 403 })
+
+/**
+ * Resolves the caller to the appointment they may act on.
+ *
+ * The role is checked *before* the appointment is loaded, so a caller who
+ * may not touch appointments at all cannot tell an existing id from a
+ * missing one by comparing 403 against 404.
+ */
+async function terminFuerZugriff(db: Db, id: string): Promise<Zugriff> {
+  const { kundeId, rolle } = await getSession()
+
+  if (rolle !== 'werkstatt' && rolle !== 'verwaltung') {
+    return { ok: false, antwort: keinZugriff() }
+  }
+
+  const termin = await db.first<Termin>('select id, filiale_id from termine where id = ?', [
+    Number(id),
+  ])
+  if (!termin) {
+    return { ok: false, antwort: Response.json({ fehler: 'Termin nicht gefunden' }, { status: 404 }) }
+  }
+
+  if (rolle === 'werkstatt') {
+    const mitarbeiter = await db.first<{ filiale_id: number | null }>(
+      'select filiale_id from kunden where id = ?',
+      [kundeId]
+    )
+    if (mitarbeiter?.filiale_id !== termin.filiale_id) {
+      return { ok: false, antwort: keinZugriff() }
+    }
+  }
+
+  return { ok: true, termin }
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const { kundeId, rolle } = await getSession()
-  const body = await request.json()
   const db = createClient()
 
+  const zugriff = await terminFuerZugriff(db, id)
+  if (!zugriff.ok) return zugriff.antwort
+
+  const body = await request.json()
   if (!ERLAUBTE_STATUS.includes(body.status)) {
     return Response.json({ fehler: 'Unbekannter Status' }, { status: 400 })
   }
 
-  const termin = await terminFuerRolleLaden(db, Number(id))
-  if (!termin) {
-    return Response.json({ fehler: 'Termin nicht gefunden' }, { status: 404 })
-  }
-  if (!(await darfBearbeiten(rolle, kundeId, termin.filiale_id))) {
-    return Response.json({ fehler: 'Kein Zugriff' }, { status: 403 })
-  }
-
-  await db.run('update termine set status = ? where id = ?', [body.status, termin.id])
+  await db.run('update termine set status = ? where id = ?', [body.status, zugriff.termin.id])
 
   return Response.json({ ok: true })
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const { kundeId, rolle } = await getSession()
   const db = createClient()
 
-  const termin = await terminFuerRolleLaden(db, Number(id))
-  if (!termin) {
-    return Response.json({ fehler: 'Termin nicht gefunden' }, { status: 404 })
-  }
-  if (!(await darfBearbeiten(rolle, kundeId, termin.filiale_id))) {
-    return Response.json({ fehler: 'Kein Zugriff' }, { status: 403 })
-  }
+  const zugriff = await terminFuerZugriff(db, id)
+  if (!zugriff.ok) return zugriff.antwort
 
   // We keep the row for the accounting export and just mark it as deleted.
   // The appointment list filters this status out.
-  await db.run('update termine set status = ? where id = ?', ['geloescht', termin.id])
+  await db.run('update termine set status = ? where id = ?', ['geloescht', zugriff.termin.id])
 
   return Response.json({ ok: true })
 }

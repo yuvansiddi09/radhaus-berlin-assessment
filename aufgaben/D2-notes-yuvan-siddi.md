@@ -2,45 +2,79 @@
 
 ## Live demo script (points 2 and 3 — the attempt that has to fail)
 
-1. Log in as **Mira Sandberg** (`/termine`). Book appointments until 3 are
-   open, then try a 4th → rejected server-side with "Maximal 3 offene
-   Termine". Then, in the browser console, fire 5 booking requests at once
-   with `Promise.all` from an account with fewer than 3 open — only enough
-   to reach 3 succeed, the rest come back `400`. This is the version of the
-   attack a single sequential click can't show: the check-then-insert race.
-2. Still as Mira, open the console and try
-   `fetch('/api/termine/3', { method: 'PATCH', ... })` (an appointment
-   belonging to a different customer) → `403`. Then try booking with a
-   forged `kundeId` in the request body pointing at another customer →
-   the appointment is created under Mira's own id regardless, provably by
-   listing `/api/termine` again afterwards.
-3. Switch to **Tom Baumgart** (Neukölln) and **Rita Ohlsen** (Wedding) on
-   `/werkstatt` — show each sees only their own branch, then switch to
-   **Katrin Lubitz** and show she sees both.
+1. **Max 3 open appointments.** As **Mira Sandberg** (`/termine`), book until
+   3 are open, then try a 4th → rejected server-side, "Maximal 3 offene
+   Termine". Then the version a sequential click can't show: from the
+   browser console, fire 5 booking requests at once with `Promise.all` from
+   an account with fewer than 3 open → only enough to reach 3 succeed, the
+   rest come back `400`. That's the check-then-insert race.
+2. **No customer touches another customer's appointment.** Still as Mira, in
+   the console: `fetch('/api/termine/3', { method: 'PATCH', ... })` against
+   an appointment belonging to someone else → `403`. Then book with a forged
+   `kundeId` in the request body pointing at another customer → the
+   appointment is created under Mira's own id anyway; prove it by listing
+   `/api/termine` again.
+3. **Branch scoping.** Switch to **Tom Baumgart** (Neukoelln) and **Rita
+   Ohlsen** (Wedding) on `/werkstatt` — each sees only their own branch.
+   Then **Katrin Lubitz** (Verwaltung) — sees both.
+4. **Forged identity.** Logged out, set `document.cookie =
+   'session=6.verwaltung.fake'` and call `/api/termine/werkstatt` → `403`.
+   The cookie is signed; without the server's secret it can't be faked.
 
 ## What the agent got wrong, and how I noticed
 
-1. **Type error from a too-narrow `as const` type.** `FILIALEN` is typed
-   `as const`, so `Set(FILIALEN.map(f => f.id))` came out as `Set<1 | 2>`,
-   which then rejected the plain `number` coming from `Number(body.filialeId)`
-   in `.has()`. Caught immediately by running `npx tsc --noEmit` — the build
-   would have failed.
-2. **Missed that workshop staff had no branch assigned anywhere in the
-   schema.** The original `kunden` table had no column linking Tom/Rita to
-   a branch, so the first draft of the branch-scoping logic had nothing to
-   scope by. Had to add a `filiale_id` column to `kunden` and assign Tom to
-   Neukoelln / Rita to Wedding in the seed data before the "staff only sees
-   their own branch" requirement could actually be implemented.
-3. **First environment setup pointed at the wrong working directory.** An
-   initial attempt to wire up a dev-server preview config used the outer
-   session directory instead of the cloned repo, so it silently wouldn't
-   have started the right project. Noticed because the preview tooling
-   didn't pick it up, and confirmed by instead starting `npm run dev`
-   directly and checking its own log output before testing.
-4. Every fix was verified against the actual live behaviour, not just by
-   reading the diff: concurrent-request testing surfaced the exact
-   3-succeed/2-rejected split expected from the race-condition fix rather
-   than trusting the transaction code by inspection alone.
+1. **A "cleaner" rewrite that silently dropped the actual fix.** A revised
+   version of `app/api/termine/route.ts` came back looking more
+   production-grade — `try`/`catch`, tidy error responses, a comment
+   announcing "use a parameterized query instead of string interpolation."
+   It had quietly gone back to reading `kundeId` from the request body
+   (the whole vulnerability) and split the check and insert into two
+   separate awaited calls again (the race). On top of that its
+   "parameterized" query used `$1` placeholders — Postgres syntax, not what
+   this project's `node:sqlite` driver takes. Noticed by reading it against
+   the requirements rather than against the previous diff, and confirmed the
+   placeholder bug by running that exact pattern against the real driver:
+   `column index out of range`. It would have crashed on the first booking.
+   **Lesson: "looks more professional" and "is more correct" are unrelated.**
+2. **Missed that workshop staff had no branch anywhere in the schema.** The
+   `kunden` table had no column linking Tom/Rita to a branch, so the first
+   pass at branch scoping had nothing to scope by. Noticed when writing the
+   filter and finding no field to filter on; had to add `filiale_id` to
+   `kunden` and assign the staff accounts in the seed before requirement 4
+   could be implemented at all.
+3. **Fixed the API but left the UI showing stale data.** After the branch
+   scoping worked, switching accounts still showed the previous account's
+   appointments until a manual reload. Only turned up by clicking through
+   the app as a user; the API was correct the whole time, so no amount of
+   re-reading the route would have found it. Cause: the list is a client
+   component that fetches once on mount, and `router.refresh()` re-renders
+   server components without remounting it.
+4. **An enumeration oracle in the authorization code itself.** The first
+   version of `app/api/termine/[id]/route.ts` loaded the appointment before
+   checking the caller's role, so an unauthorized caller got `404` for a
+   missing id and `403` for a real one — enough to map which appointments
+   exist. Ironic given D1 flagged exactly this pattern on the password
+   reset. Found while re-reading my own merged code before hand-in, not
+   while writing it.
+5. **Type error from a too-narrow `as const`.** `FILIALEN` is `as const`, so
+   `Set(FILIALEN.map(f => f.id))` inferred `Set<1 | 2>` and rejected the
+   plain `number` from `Number(body.filialeId)`. Caught by `npx tsc
+   --noEmit`; the build would have failed.
+6. **Two packaging slips.** A dev-server config pointed at the wrong working
+   directory, and the first submission ZIP swept in gitignored build
+   artifacts (`tsconfig.tsbuildinfo`, `next-env.d.ts`). Caught by checking
+   the server's own startup log, and by diffing the ZIP's contents against
+   `git ls-files`.
+
+## How I checked the agent's work
+
+Reading the diff was never the test. Each requirement was verified against
+running behaviour, and specifically against the case that must *fail*:
+concurrent requests for the race (`Promise.all`, asserting how many got
+through), forged ids and forged cookies for the access rules, and switching
+between all six accounts in the browser for the scoping rules. Plus `npx
+tsc --noEmit` and `npm run build` on every pass, and a `grep` over the
+built client bundle to confirm no secret shipped to the browser.
 
 ## What was deliberately left out in the 60 minutes
 
@@ -51,16 +85,12 @@ the five appointment/session requirements in the time available.
 
 ## One stretch item beyond the checklist
 
-Even after every server-side check above, the hard-wired sign-in itself was
-still forgeable: the account switcher wrote plain `kunde_id`/`rolle` cookies
-via `document.cookie`, so anyone could open devtools and become `verwaltung`
-directly, bypassing every check that trusted the session. Signed the session
-cookie with HMAC-SHA256 (using the `SESSION_SECRET` that was already sitting
-unused in `.env`) and moved cookie-issuing server-side (`/api/sitzung`),
-which looks the role up from the database rather than trusting the client at
-all. Verified live: a hand-crafted cookie with a fake signature is rejected
-(403/401), even from a fully logged-out state. This was explicitly out of
-the "must hold" checklist and the brief says real authentication isn't the
-point - kept it scoped to *signing* the existing hard-wired identity rather
-than building real registration/passwords, since that would have gone
-against what was actually asked for.
+Every fix above trusts the session — but the session itself was forgeable:
+the switcher wrote plain `kunde_id`/`rolle` cookies via `document.cookie`,
+so anyone could open devtools and become `verwaltung`, walking straight past
+all of it. The `session` cookie is now signed with HMAC-SHA256 (using the
+`SESSION_SECRET` that was already sitting unused in `.env`) and issued only
+server-side by `/api/sitzung`, which looks the role up from the database.
+Kept deliberately narrow: this *signs* the existing hard-wired switcher, it
+does not add registration or passwords, because the brief says real
+authentication isn't the point.

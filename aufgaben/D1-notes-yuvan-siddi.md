@@ -67,6 +67,9 @@
    annoying (bad data, confusing UI states) rather than a security hole on
    its own, since ownership was the real gate missing.
 
+**Outcome:** findings 1–5, 7 and 8 were fixed during D2. Finding 6 (photo
+IDOR) was deliberately left open — see the D2 handover notes.
+
 ## Part C — Design: enforcing "max 3 open appointments" server-side
 
 ```sql
