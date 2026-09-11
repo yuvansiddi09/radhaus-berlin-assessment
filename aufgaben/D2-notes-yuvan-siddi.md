@@ -31,3 +31,19 @@ served statically with no ownership check) — fixing it properly means moving
 uploads out of `/public` entirely and serving them through an authenticated,
 ownership-checked route, which is a bigger structural change than the time
 budget allowed alongside the five appointment/session requirements.
+
+## One stretch item beyond the checklist
+
+Even after every server-side check above, the hard-wired sign-in itself was
+still forgeable: the account switcher wrote plain `kunde_id`/`rolle` cookies
+via `document.cookie`, so anyone could open devtools and become `verwaltung`
+directly, bypassing every check that trusted the session. Signed the session
+cookie with HMAC-SHA256 (using the `SESSION_SECRET` that was already sitting
+unused in `.env`) and moved cookie-issuing server-side (`/api/sitzung`),
+which looks the role up from the database rather than trusting the client at
+all. Verified live: a hand-crafted cookie with a fake signature is rejected
+(403/401), even from a fully logged-out state. This was explicitly out of
+the "must hold" checklist and the brief says real authentication isn't the
+point - kept it scoped to *signing* the existing hard-wired identity rather
+than building real registration/passwords, since that would have gone
+against what was actually asked for.
