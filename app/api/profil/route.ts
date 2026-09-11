@@ -28,6 +28,9 @@ export async function PATCH(request: Request) {
 
   for (const feld of FELDER) {
     if (body[feld] !== undefined) {
+      // `feld` is a column name, which SQL cannot bind as a parameter - it
+      // is safe here only because it comes from the fixed FELDER list above
+      // and never from the request. The value itself is still bound.
       await db.run(`update kunden set ${feld} = ? where id = ?`, [String(body[feld]), kundeId])
     }
   }
