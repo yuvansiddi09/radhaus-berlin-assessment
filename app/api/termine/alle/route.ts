@@ -1,12 +1,12 @@
-// app/api/termine/alle/route.ts - full appointment list across both branches.
-//
-// Used by the nightly reminder/accounting job, and by the branch overview in
-// the browser, which loads it directly with the service key.
+// app/api/termine/alle/route.ts - full appointment list across both
+// branches, for the nightly reminder/accounting job only. Not used by the
+// browser - the workshop UI calls /api/termine/werkstatt with its session
+// instead, so this key never has to reach client-side code.
 import { createClient } from '@/lib/db'
-import { SERVICE_KEY } from '@/lib/config'
+import { SERVICE_KEY } from '@/lib/service-key'
 
 export async function GET(request: Request) {
-  if (request.headers.get('x-service-key') !== SERVICE_KEY) {
+  if (!SERVICE_KEY || request.headers.get('x-service-key') !== SERVICE_KEY) {
     return Response.json({ fehler: 'Kein Zugriff' }, { status: 401 })
   }
 

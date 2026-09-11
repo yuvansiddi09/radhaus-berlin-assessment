@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { SERVICE_KEY } from '@/lib/config'
 
 interface Zeile {
   id: number
@@ -22,12 +21,7 @@ export default function Terminuebersicht() {
 
   const laden = useCallback(async () => {
     setLaedt(true)
-    // The overview loads the full list directly, without the detour via the
-    // server, so the workshop tablet stays responsive.
-    const antwort = await fetch('/api/termine/alle', {
-      headers: { 'x-service-key': SERVICE_KEY },
-      cache: 'no-store',
-    })
+    const antwort = await fetch('/api/termine/werkstatt', { cache: 'no-store' })
     if (!antwort.ok) {
       setFehler('Die Terminliste konnte nicht geladen werden.')
       setLaedt(false)

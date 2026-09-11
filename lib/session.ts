@@ -18,3 +18,12 @@ export async function getRolle(): Promise<string> {
   const store = await cookies()
   return store.get('rolle')?.value ?? 'besucher'
 }
+
+export interface Session {
+  kundeId: number | null
+  rolle: string
+}
+
+export async function getSession(): Promise<Session> {
+  return { kundeId: await getKundeId(), rolle: await getRolle() }
+}

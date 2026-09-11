@@ -2,7 +2,9 @@
 import { createClient } from '@/lib/db'
 import { getKundeId } from '@/lib/session'
 
-const FELDER = ['name', 'email', 'telefon', 'adresse', 'rolle']
+// Deliberately excludes 'rolle' - a customer editing their own profile must
+// never be able to grant themselves a different role.
+const FELDER = ['name', 'email', 'telefon', 'adresse']
 
 export async function GET() {
   const kundeId = await getKundeId()

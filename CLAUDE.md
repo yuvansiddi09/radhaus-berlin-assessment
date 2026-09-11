@@ -1,0 +1,35 @@
+# Radhaus Berlin — agent rules (D2)
+
+Scope: fix authorization/session handling in the workshop booking portal per
+`aufgaben/D2-live-build.md`. Sign-in stays hard-wired (cookie-based `kunde_id`
++ `rolle`, set by the account switcher) — do not build real authentication.
+
+## Non-negotiable rules
+
+1. **Never trust identity or role from the request body.** Every API route
+   must derive who is asking from the session helpers in `lib/session.ts`
+   (`getKundeId()`, `getRolle()`), not from `body.kundeId` or similar.
+2. **Every write must be scoped to the caller.** A customer can only read/
+   write their own rows. A workshop employee is scoped to their own branch
+   (`filiale_id`). Only `verwaltung` may see both branches.
+3. **All SQL must be parameterized.** No string interpolation of values into
+   SQL, ever — including inside template literals.
+4. **Business rules enforced server-side, inside a transaction.** The "max 3
+   open appointments" check and the insert that follows it must happen
+   without an `await` between them, so no concurrent request can slip
+   through between the check and the write.
+5. **No secret is allowed to reach client-side code.** Anything imported by
+   a file with `'use client'` (directly or transitively) is public. Move
+   secrets (`SERVICE_KEY`) out of `lib/config.ts` and read them from
+   `process.env` only in server-only files.
+6. **Self-service must not allow privilege escalation.** A customer editing
+   their own profile must never be able to change their own `rolle`.
+7. Keep diffs minimal and scoped to the D2 checklist. Don't refactor
+   unrelated code, don't add new dependencies, don't restyle the UI.
+
+## Explicitly out of scope for this pass
+
+- Fixing the photo upload/serving IDOR (`public/uploads/*` is served
+  statically with guessable filenames, no ownership check). Flagged in the
+  D2 handover notes as deliberately left out.
+- Real password-based authentication, hashing, or session tokens.

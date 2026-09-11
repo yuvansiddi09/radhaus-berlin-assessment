@@ -27,7 +27,8 @@ db.exec(`
     passwort_hash TEXT NOT NULL,
     telefon       TEXT NOT NULL DEFAULT '',
     adresse       TEXT NOT NULL DEFAULT '',
-    rolle         TEXT NOT NULL DEFAULT 'kunde'
+    rolle         TEXT NOT NULL DEFAULT 'kunde',
+    filiale_id    INTEGER REFERENCES filialen(id)
   );
 
   CREATE TABLE termine (
@@ -64,15 +65,15 @@ for (const f of filialen) insertFiliale.run(...f)
 // All accounts below are fictional. The password hashes are placeholders -
 // this is an exercise environment, not a real system.
 const kunden = [
-  ['Mira Sandberg', 'mira.sandberg@example.org', 'hash$mira', '030 5512300', 'Weserstr. 8, 12047 Berlin', 'kunde'],
-  ['Jonas Kreft', 'jonas.kreft@example.org', 'hash$jonas', '030 5512301', 'Pankstr. 21, 13357 Berlin', 'kunde'],
-  ['Ayse Demirel', 'ayse.demirel@example.org', 'hash$ayse', '030 5512302', 'Hermannstr. 4, 12049 Berlin', 'kunde'],
-  ['Tom Baumgart', 'tom.baumgart@radhaus.local', 'hash$tom', '030 5512400', '', 'werkstatt'],
-  ['Rita Ohlsen', 'rita.ohlsen@radhaus.local', 'hash$rita', '030 5512401', '', 'werkstatt'],
-  ['Katrin Lubitz', 'katrin.lubitz@radhaus.local', 'hash$katrin', '030 5512500', '', 'verwaltung'],
+  ['Mira Sandberg', 'mira.sandberg@example.org', 'hash$mira', '030 5512300', 'Weserstr. 8, 12047 Berlin', 'kunde', null],
+  ['Jonas Kreft', 'jonas.kreft@example.org', 'hash$jonas', '030 5512301', 'Pankstr. 21, 13357 Berlin', 'kunde', null],
+  ['Ayse Demirel', 'ayse.demirel@example.org', 'hash$ayse', '030 5512302', 'Hermannstr. 4, 12049 Berlin', 'kunde', null],
+  ['Tom Baumgart', 'tom.baumgart@radhaus.local', 'hash$tom', '030 5512400', '', 'werkstatt', 1],
+  ['Rita Ohlsen', 'rita.ohlsen@radhaus.local', 'hash$rita', '030 5512401', '', 'werkstatt', 2],
+  ['Katrin Lubitz', 'katrin.lubitz@radhaus.local', 'hash$katrin', '030 5512500', '', 'verwaltung', null],
 ]
 const insertKunde = db.prepare(
-  'INSERT INTO kunden (name, email, passwort_hash, telefon, adresse, rolle) VALUES (?, ?, ?, ?, ?, ?)'
+  'INSERT INTO kunden (name, email, passwort_hash, telefon, adresse, rolle, filiale_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
 )
 for (const k of kunden) insertKunde.run(...k)
 

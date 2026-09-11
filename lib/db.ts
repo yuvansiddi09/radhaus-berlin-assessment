@@ -49,6 +49,21 @@ export function createClient() {
       const sql = `INSERT INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})`
       db.prepare(sql).run(...columns.map((c) => values[c]))
     },
+
+    // Runs `fn` synchronously with no `await` in between BEGIN/COMMIT, so no
+    // other request's tick can interleave between a check and the write that
+    // depends on it (e.g. "count open appointments, then insert one").
+    transaction<T>(fn: (raw: DatabaseSync) => T): T {
+      db.exec('BEGIN IMMEDIATE')
+      try {
+        const result = fn(db)
+        db.exec('COMMIT')
+        return result
+      } catch (err) {
+        db.exec('ROLLBACK')
+        throw err
+      }
+    },
   }
 }
 
