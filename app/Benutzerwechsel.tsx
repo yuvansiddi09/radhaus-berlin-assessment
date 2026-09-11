@@ -3,29 +3,29 @@
 import { useRouter } from 'next/navigation'
 
 // Login is hard-wired for this exercise environment: pick an account and the
-// portal treats you as that person.
+// portal treats you as that person. The client only ever sends *which*
+// account id to become - the server looks up that account's real role in
+// the database and issues a signed cookie for it (see /api/sitzung). The
+// browser can no longer just declare its own role.
 const KONTEN = [
-  { id: 0, label: 'Nicht angemeldet', rolle: 'besucher' },
-  { id: 1, label: 'Mira Sandberg (Kundin)', rolle: 'kunde' },
-  { id: 2, label: 'Jonas Kreft (Kunde)', rolle: 'kunde' },
-  { id: 3, label: 'Ayse Demirel (Kundin)', rolle: 'kunde' },
-  { id: 4, label: 'Tom Baumgart (Werkstatt)', rolle: 'werkstatt' },
-  { id: 5, label: 'Rita Ohlsen (Werkstatt)', rolle: 'werkstatt' },
-  { id: 6, label: 'Katrin Lubitz (Verwaltung)', rolle: 'verwaltung' },
+  { id: 0, label: 'Nicht angemeldet' },
+  { id: 1, label: 'Mira Sandberg (Kundin)' },
+  { id: 2, label: 'Jonas Kreft (Kunde)' },
+  { id: 3, label: 'Ayse Demirel (Kundin)' },
+  { id: 4, label: 'Tom Baumgart (Werkstatt)' },
+  { id: 5, label: 'Rita Ohlsen (Werkstatt)' },
+  { id: 6, label: 'Katrin Lubitz (Verwaltung)' },
 ]
 
 export default function Benutzerwechsel({ aktiv }: { aktiv: number }) {
   const router = useRouter()
 
-  function wechseln(id: number) {
-    const konto = KONTEN.find((k) => k.id === id)
-    if (!konto || konto.id === 0) {
-      document.cookie = 'kunde_id=; path=/; max-age=0'
-      document.cookie = 'rolle=; path=/; max-age=0'
-    } else {
-      document.cookie = `kunde_id=${konto.id}; path=/; max-age=86400`
-      document.cookie = `rolle=${konto.rolle}; path=/; max-age=86400`
-    }
+  async function wechseln(id: number) {
+    await fetch('/api/sitzung', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kontoId: id }),
+    })
     router.refresh()
   }
 

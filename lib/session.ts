@@ -1,29 +1,30 @@
 import { cookies } from 'next/headers'
+import { verifySessionToken } from './session-token'
 
 /**
  * Who is currently using the portal.
  *
- * On login the app writes the customer id into the `kunde_id` cookie, so every
- * later request knows who is asking without hitting the database again.
+ * The `session` cookie is a signed token (see lib/session-token.ts and
+ * app/api/sitzung/route.ts) - it can only have been produced by this server,
+ * so a visitor can no longer just write an id/role into document.cookie by
+ * hand and be believed.
  */
-export async function getKundeId(): Promise<number | null> {
-  const store = await cookies()
-  const raw = store.get('kunde_id')?.value
-  if (!raw) return null
-  const id = Number(raw)
-  return Number.isFinite(id) ? id : null
-}
-
-export async function getRolle(): Promise<string> {
-  const store = await cookies()
-  return store.get('rolle')?.value ?? 'besucher'
-}
-
 export interface Session {
   kundeId: number | null
   rolle: string
 }
 
 export async function getSession(): Promise<Session> {
-  return { kundeId: await getKundeId(), rolle: await getRolle() }
+  const store = await cookies()
+  const verified = verifySessionToken(store.get('session')?.value)
+  if (!verified) return { kundeId: null, rolle: 'besucher' }
+  return verified
+}
+
+export async function getKundeId(): Promise<number | null> {
+  return (await getSession()).kundeId
+}
+
+export async function getRolle(): Promise<string> {
+  return (await getSession()).rolle
 }
