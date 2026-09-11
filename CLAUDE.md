@@ -1,8 +1,9 @@
 # Radhaus Berlin — agent rules (D2)
 
 Scope: fix authorization/session handling in the workshop booking portal per
-`aufgaben/D2-live-build.md`. Sign-in stays hard-wired (cookie-based `kunde_id`
-+ `rolle`, set by the account switcher) — do not build real authentication.
+`aufgaben/D2-live-build.md`. Sign-in stays hard-wired (pick one of six fixed
+accounts via the switcher) — do not build real authentication (no
+registration, no passwords).
 
 ## Non-negotiable rules
 
@@ -32,4 +33,22 @@ Scope: fix authorization/session handling in the workshop booking portal per
 - Fixing the photo upload/serving IDOR (`public/uploads/*` is served
   statically with guessable filenames, no ownership check). Flagged in the
   D2 handover notes as deliberately left out.
-- Real password-based authentication, hashing, or session tokens.
+- Real password-based authentication: registration, passwords, hashing.
+  (Note: the hard-wired identity was later made tamper-proof with a signed
+  session cookie — see the "Amendment" section below. That's *signing* the
+  existing fixed-account switcher, not building real auth, and stays
+  within this rule.)
+
+## Amendment — session cookie signing (added after the initial 60 minutes)
+
+The switcher originally wrote plain `kunde_id`/`rolle` cookies via
+`document.cookie`, which every server-side check above trusted. That's
+forgeable by hand in devtools, which defeats every rule above it. Added:
+
+8. **The session must be a single signed cookie (`session`), issued only by
+   `app/api/sitzung/route.ts`.** It signs `kundeId.rolle` with HMAC-SHA256
+   using `SESSION_SECRET` (server-only, never imported by client code) and
+   sets it `httpOnly`. The client may only ever request *which* of the six
+   fixed accounts to become by id — the role is looked up from the `kunden`
+   table server-side, never taken from the client. No code should read or
+   write `kunde_id`/`rolle` cookies directly anymore.

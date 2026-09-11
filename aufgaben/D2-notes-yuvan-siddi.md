@@ -1,5 +1,23 @@
 # D2 — Handover notes
 
+## Live demo script (points 2 and 3 — the attempt that has to fail)
+
+1. Log in as **Mira Sandberg** (`/termine`). Book appointments until 3 are
+   open, then try a 4th → rejected server-side with "Maximal 3 offene
+   Termine". Then, in the browser console, fire 5 booking requests at once
+   with `Promise.all` from an account with fewer than 3 open — only enough
+   to reach 3 succeed, the rest come back `400`. This is the version of the
+   attack a single sequential click can't show: the check-then-insert race.
+2. Still as Mira, open the console and try
+   `fetch('/api/termine/3', { method: 'PATCH', ... })` (an appointment
+   belonging to a different customer) → `403`. Then try booking with a
+   forged `kundeId` in the request body pointing at another customer →
+   the appointment is created under Mira's own id regardless, provably by
+   listing `/api/termine` again afterwards.
+3. Switch to **Tom Baumgart** (Neukölln) and **Rita Ohlsen** (Wedding) on
+   `/werkstatt` — show each sees only their own branch, then switch to
+   **Katrin Lubitz** and show she sees both.
+
 ## What the agent got wrong, and how I noticed
 
 1. **Type error from a too-narrow `as const` type.** `FILIALEN` is typed
@@ -26,11 +44,10 @@
 
 ## What was deliberately left out in the 60 minutes
 
-**The photo IDOR** (`public/uploads/foto-104x.svg`, sequential filenames,
-served statically with no ownership check) — fixing it properly means moving
-uploads out of `/public` entirely and serving them through an authenticated,
-ownership-checked route, which is a bigger structural change than the time
-budget allowed alongside the five appointment/session requirements.
+**Photo access control** (`public/uploads/`) — filenames are still
+sequential and served with no ownership check, because fixing it properly
+means moving uploads out of `/public` entirely, which didn't fit alongside
+the five appointment/session requirements in the time available.
 
 ## One stretch item beyond the checklist
 
