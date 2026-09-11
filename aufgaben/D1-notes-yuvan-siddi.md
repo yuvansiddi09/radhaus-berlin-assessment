@@ -4,23 +4,25 @@
 
 | Object | Role | read | create | update | delete | enforced where? | why there? |
 |---|---|---|---|---|---|---|---|
-| Profile | Visitor | – | – | – | – | – | No account, nothing to show. |
+| Profile | Visitor | – | – | – | – | Server/API | No route exists for an anonymous caller to read profile data — the API's own session check (401 with no cookie) is what actually blocks it, not just the absence of a UI link. |
 | Profile | Customer | own only | – | own only | – | Server/API | Ownership can only be checked once you know who is asking (session), which the browser can't be trusted to enforce. |
-| Profile | Workshop staff | – | – | – | – | – | Staff never need raw customer profile data; the customer's name/branch reaches them only through the appointment view. |
+| Profile | Workshop staff | – | – | – | – | Server/API | Staff never need raw customer profile data; the profile API only ever returns the caller's own row, so a staff account calling it gets their own record, not a customer's. |
 | Profile | Administration | all | – | all | all | Server/API | Support needs to correct customer data; still needs a role check, not a client toggle. |
-| Profile | Nightly job | – | – | – | – | – | Job only touches appointments, never profiles. |
+| Profile | Nightly job | – | – | – | – | Server/API | The job's own endpoint (authenticated by a server-held key) never exposes profile data — there's simply no code path from it to this table. |
 | Appointment | Visitor | aggregate free-slot counts only | – | – | – | Server/API | The count is derived server-side from real rows; raw rows must never reach an anonymous caller. |
 | Appointment | Customer | own only | own only (max 3 open) | – | – | Server/API | Both "own only" and "max 3 open" are business rules that depend on server state (session + a live count) that the browser cannot be trusted to check. |
 | Appointment | Workshop staff | own branch only | – | status, own branch only | own branch only (soft-delete) | Server/API | Branch scoping needs the staff member's own branch, known only server-side from their account row. |
 | Appointment | Administration | all branches | – | all | all | Server/API | Same mechanism as staff, just without the branch filter. |
 | Appointment | Nightly job | all (for reminders/export) | – | – | – | Server/API | Authenticated by a server-held secret header, never exposed to a browser. |
-| Photo | Visitor | – | – | – | – | – | Photos are personal data tied to a specific appointment. |
+| Photo | Visitor | – | – | – | – | Server/API | Photos are personal data tied to a specific appointment; the serving route should require a session the same way the appointment API does. |
 | Photo | Customer | own only | own only | – | own only | Server/API | Same reasoning as appointments — needs session + an ownership join, not just "guess the filename". |
 | Photo | Workshop staff | own branch only | – | – | – | Server/API | Staff need to see the bike's condition for appointments they're handling, nothing more. |
 | Photo | Administration | all | – | – | all | Server/API | Oversight/cleanup. |
 | Price list | Visitor | all | – | – | – | Browser | Public marketing information, nothing sensitive — fine to render straight from a public page. |
-| Price list | Customer/Staff | all | – | – | – | Browser | Same as above. |
-| Price list | Administration | all | all | all | all | Server/API | Writes need a role check; reads can stay public. |
+| Price list | Customer | all | – | – | – | Browser | Same as visitors — prices aren't gated behind login. |
+| Price list | Workshop staff | all | – | – | – | Browser | Staff quote prices to customers face-to-face; no different from the public listing. |
+| Price list | Administration | all | all | all | all | Server/API | Maintaining prices needs a role check; reads can stay public. |
+| Price list | Nightly job | – | – | – | – | Server/API | The reminder/export job never touches pricing — its endpoint has no code path to this table either. |
 
 ## Part B — The attack (findings in this repository)
 
@@ -39,12 +41,13 @@
    logged in or not — could change the status of, or soft-delete, *any*
    appointment by id. Severity: critical.
 4. **`SERVICE_KEY` hard-coded in `lib/config.ts` and imported by a
-   `'use client'` component** (`Terminuebersicht.tsx`). Anything a client
-   component imports ships in the browser bundle — the "secret" meant only
-   for the nightly job was sitting in plain text in every visitor's browser,
-   and the workshop overview used it to read data for *both* branches
-   regardless of which branch the logged-in staff member belonged to (no
-   branch scoping at all). Severity: critical.
+   `'use client'` component** (`app/werkstatt/Terminuebersicht.tsx`).
+   Anything a client component imports ships in the browser bundle — the
+   "secret" meant only for the nightly job's own endpoint
+   (`app/api/termine/alle/route.ts`) was sitting in plain text in every
+   visitor's browser, and the workshop overview used that same endpoint to
+   read data for *both* branches regardless of which branch the logged-in
+   staff member belonged to (no branch scoping at all). Severity: critical.
 5. **Privilege escalation via `PATCH /api/profil`.** `FELDER` included
    `'rolle'`, so a customer could `PATCH` their own account into
    `verwaltung`. Severity: critical.
@@ -60,7 +63,9 @@
    (no direct data exposure, just a minor privacy leak), but cheap to fix —
    we fixed it anyway in D2 since it was a one-line change.
 8. **No input validation** on appointment fields (`filialeId`, `datum`,
-   `beschreibung` accepted unchecked in the original code).
+   `beschreibung` accepted unchecked in the original code). Severity: low —
+   annoying (bad data, confusing UI states) rather than a security hole on
+   its own, since ownership was the real gate missing.
 
 ## Part C — Design: enforcing "max 3 open appointments" server-side
 
