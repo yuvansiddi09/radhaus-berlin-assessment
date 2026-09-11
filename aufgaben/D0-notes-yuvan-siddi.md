@@ -1,24 +1,19 @@
-# D0 — Code reading notes
+# D0 — Code reading
 
 Name: Yuvan Siddi
 
-Findings on `app/api/termine/route.ts`, worst first:
+Notes on `app/api/termine/route.ts`, worst first:
 
-1. **No authentication/authorization at all.** `GET` returns *every*
-   appointment in the system to any caller, and `POST` takes `kundeId`
-   straight from the request body — anyone can create (or, via the 3-open
-   count, probe) appointments for any customer. Should derive the customer
-   from the session (cookie), never from the body.
-2. **SQL injection.** `` `select * from termine where kunde_id = '${kundeId}'` ``
-   interpolates a client-controlled value directly into SQL. Should be a
-   parameterized query (`where kunde_id = ?`, `[kundeId]`).
-3. **Race condition on the business rule.** The "max 3 open appointments"
-   check and the insert are two separate awaited calls (`db.query` then
-   `db.insert`), with a real tick between them (see `lib/db.ts`). Two
-   concurrent requests can both read "2 open" and both insert, exceeding the
-   limit. Needs to be one atomic check-and-insert (e.g. a transaction).
-4. **No input validation.** `filialeId`, `datum`, `beschreibung` are used
-   unchecked — an unknown branch id or empty description is accepted.
-5. **Minor:** `GET` has no filter at all, not even a `status <> 'geloescht'`
-   exclusion — deleted appointments would still show up if this endpoint
-   were used to list anything.
+1. **No auth on GET.** `select * from termine` — no `where`, no session check.
+   Anyone hits this route, gets every customer's appointments.
+2. **kundeId trusted from request body.** `body.kundeId` — never checked
+   against who's actually asking. Anyone can create/probe appointments for
+   any customer.
+3. **SQL injection.** `kunde_id = '${kundeId}'` — string interpolation, not a
+   parameter. Should be `where kunde_id = ?`, params array.
+4. **Check + insert not atomic.** `offene` check is one awaited call, insert
+   is another, nothing ties them together — a second request could slip in
+   between and both pass the "< 3" check. Needs to be one atomic step.
+5. **No input validation.** `filialeId`, `datum`, `beschreibung` — used
+   as-is, no checks.
+6. Minor: GET has no `status` filter either — deleted ones would show too.
